@@ -2,3 +2,8 @@
 GameOfLife/output_images
 GameOfLife/scorep_output
 GameOfLife/slurm_output
+
+GameOfLife/CMakeFiles
+GameOfLife/cmake_install.cmake
+GameOfLife/CMakeCache.txt
+GameOfLife/Makefile
