@@ -1,7 +1,8 @@
 *.out
 GameOfLife/output_images
-GameOfLife/scorep-*/
+GameOfLife/scorep_output/
 GameOfLife/slurm_output
+
 
 GameOfLife/CMakeFiles
 GameOfLife/cmake_install.cmake

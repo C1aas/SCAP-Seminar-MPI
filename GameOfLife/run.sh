@@ -19,14 +19,18 @@
 module purge
 module load openmpi
 
+export SCOREP_EXPERIMENT_DIRECTORY=scorep_output/scorep
+
 export SCOREP_ENABLE_PROFILING=true
 export SCOREP_ENABLE_TRACING=true
 
-#export SCOREP_EXPERIMENT_DIRECTORY=scorep_output
+
+
 
 
 # mpiexec -np 1 time ./main 1000 10 -1
 
-./bin/GameOfLife 50 50 1 true false true
+# <grid_size:int> <total_iterations:int> <output_steps:int> <console_output:bool> <output_images:bool> <measure_time:bool>
+./bin/GameOfLife 1000 50 1 true false false
 
 # ./main 100 100 10 true false true

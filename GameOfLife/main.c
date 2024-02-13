@@ -35,7 +35,7 @@ void initializeGridModulo(unsigned char** grid, int height, int width, int modul
 void initializeGridSpaceCraft(unsigned char** grid, int height, int width, int offsety, int offsetx);
 
 void updateGrid(unsigned char** grid, int height, int width);
-void updateGridOptimized(unsigned char**, int height, int width);
+void updateGridOld(unsigned char**, int height, int width);
 
 void printGrid(unsigned char**, int height, int width, int iteration);
 void printGridFlat(unsigned char**, int height, int width, int iteration);
@@ -92,9 +92,9 @@ Arguments parseArguments(int argc, char** argv) {
     //parse the true/false arguments
 
     args.console_output = parseBool(argv[4], "console_output");
-    if (args.grid_size > 100) {
+    if (args.console_output && args.grid_size > 100) {
         printf("Error: This setting would very large console output\n");
-        exit(1);
+        //exit(1);
     }
     args.output_images = parseBool(argv[5], "output_images");
     args.measure_time = parseBool(argv[6], "measure_time");
@@ -180,16 +180,16 @@ void gameLoop(Arguments args) {
 
     while (1) {
         
-        if(iteration % args.output_steps == 0) {
-            // 
-            if(args.output_steps > 0) {
+        if(args.output_steps > 0) {
+            if(iteration % args.output_steps == 0) {
                 //writeGridToFile(filePointer, grid, height, width, iteration);
                 sprintf(file_name_buffer, "output_images/GoLOutput%d.jpg", iteration);
                 
                 if (args.console_output) {
-                    system("clear"); // Clear the console
+                    //system("clear"); // Clear the console
                     printGrid(grid, height, width, iteration);
-                    usleep(200000); // Sleep for 200 milliseconds
+                    //usleep(200000); // Sleep for 200 milliseconds
+                    //usleep(20000); // Sleep for 20 milliseconds
                 }
 
                 if (args.output_images) {
@@ -204,8 +204,8 @@ void gameLoop(Arguments args) {
             break;
         }
 
-        updateGridOptimized(grid, height, width);
-        //updateGrid(grid, height, width);
+        //updateGridOptimized(grid, height, width);
+        updateGrid(grid, height, width);
         //usleep(200000); // Sleep for 200 milliseconds
         // usleep(20000); // Sleep for 20 milliseconds
         // usleep(2000); // Sleep for 2 milliseconds
@@ -286,25 +286,25 @@ void initializeGridSpaceCraft(unsigned char** grid, int height, int width, int o
 
 void printGrid(unsigned char** grid, int height, int width, int iteration) {
     // Print top border
-    for (int j = 0; j < width + 2; j++) printf("-");
+    for (int j = 0; j < width*2 + 2; j++) printf("-");
     printf("\n");
 
     for (int i = 0; i < height; i++) {
         printf("|"); // Left border
         for (int j = 0; j < width; j++) {
-            printf("%c", grid[i][j] ? 'O' : '.');
+            printf("%c ", grid[i][j] ? 'O' : '.');
         }
         printf("|\n"); // Right border
     }
 
     // Print bottom border
-    for (int j = 0; j < width + 2; j++) printf("-");
+    for (int j = 0; j < width*2 + 2; j++) printf("-");
     printf("\n");
     printf("iteration: %d \n", iteration);
 }
 
 
-void updateGrid(unsigned char** grid, int height, int width) {
+void updateGridOld(unsigned char** grid, int height, int width) {
     // Allocate a temporary grid to hold the next state
     unsigned char** tempGrid = createGrid(height, width);
     if (tempGrid == NULL) {
@@ -349,7 +349,7 @@ void updateGrid(unsigned char** grid, int height, int width) {
     freeGrid(tempGrid, height);
 }
 
-void updateGridOptimized(unsigned char** grid, int height, int width) {
+void updateGrid(unsigned char** grid, int height, int width) {
     // First pass: Determine the next state for each cell
     for (int i = 0; i < height; i++) {
         for (int j = 0; j < width; j++) {
