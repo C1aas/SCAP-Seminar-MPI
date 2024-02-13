@@ -8,6 +8,10 @@
 #define HEIGHT 40000
 #define DENSITY 0.3
 
+unsigned char **createRandomBitArray(int width, int height, float density);
+void freeBitArray(unsigned char **array, int height);
+void printBitArray(unsigned char **bitArray, int width, int height);
+
 /*
 int main() {
 
@@ -48,6 +52,15 @@ unsigned char **createRandomBitArray(int width, int height, float density) {
     }
 
     return array;
+}
+
+void freeBitArray(unsigned char **array, int height) {
+    if (array != NULL) {
+        for (int i = 0; i < height; i++) {
+            free(array[i]); // Free each row
+        }
+        free(array); // Free the array of pointers
+    }
 }
 
 void printBitArray(unsigned char **bitArray, int width, int height) {
@@ -125,11 +138,4 @@ void write_jpeg_file(char *filename, unsigned char **bitArray, int width, int he
     free(image);
 }
 
-void freeBitArray(unsigned char **array, int height) {
-    if (array != NULL) {
-        for (int i = 0; i < height; i++) {
-            free(array[i]); // Free each row
-        }
-        free(array); // Free the array of pointers
-    }
-}
+

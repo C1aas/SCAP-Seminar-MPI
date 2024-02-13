@@ -31,6 +31,6 @@ export SCOREP_ENABLE_TRACING=true
 # mpiexec -np 1 time ./main 1000 10 -1
 
 # <grid_size:int> <total_iterations:int> <output_steps:int> <console_output:bool> <output_images:bool> <measure_time:bool>
-./bin/GameOfLife 10000 50 -1 false false false
+./bin/GameOfLife 1000 50 -1 false false false
 
 # ./main 100 100 10 true false true
