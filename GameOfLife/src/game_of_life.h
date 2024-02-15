@@ -17,13 +17,22 @@ struct GameConfig{
 typedef struct GameConfig GameConfig;
 
 /**
- * Create a grid with the given height and width
+ * Create a grid with the given height and width the memory block is allocated row by row
  * 
  * @param height the height of the grid
  * @param width the width of the grid
  * @return the created grid
 */
 unsigned char** createGrid(int height, int width);
+
+/**
+ * Create a grid with the given height and width the memory block is allocated in a single block
+ * 
+ * @param height the height of the grid
+ * @param width the width of the grid
+ * @return the created grid
+*/
+unsigned char* createGridSingleBlock(int height, int width);
 
 /**
  * Free the memory of the grid
@@ -42,6 +51,8 @@ void freeGrid(unsigned char** grid, int height);
  * @param density the density of black cells in the grid
 */
 void initializeGridRandom(unsigned char** grid, int height, int width, float density);
+
+void initializeGridRandom1D(unsigned char* grid, int height, int width, float density);
 
 void initializeGridModulo(unsigned char** grid, int height, int width, int modulo);
 

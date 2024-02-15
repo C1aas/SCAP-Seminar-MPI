@@ -16,6 +16,15 @@ unsigned char** createGrid(int height, int width) {
     return grid;
 }
 
+unsigned char* createGridSingleBlock(int height, int width) {
+    unsigned char* grid = malloc(height * width * sizeof(unsigned char *));
+    if (grid == NULL) {
+        printf("Memory allocation failed\n");
+        exit(1);
+    }
+    return grid;
+}
+
 void freeGrid(unsigned char** grid, int height) {
     for (int i = 0; i < height; i++) {
         free(grid[i]);
@@ -30,6 +39,17 @@ void initializeGridRandom(unsigned char** grid, int height, int width, float den
         for (int j = 0; j < width; j++) {
             float probability = rand() / (RAND_MAX + 1.0);
             grid[i][j] = probability < density ? 1 : 0;
+        }
+    }
+}
+
+void initializeGridRandom1D(unsigned char* grid, int height, int width, float density) {
+    srand(time(NULL)); // Seed the random number generator with current time
+    
+    for (int i = 0; i < height; i++) {
+        for (int j = 0; j < width; j++) {
+            float probability = rand() / (RAND_MAX + 1.0);
+            grid[i * height + j] = probability < density ? 1 : 0;
         }
     }
 }
@@ -162,6 +182,7 @@ void gameLoop(GameConfig cfg) {
                     //system("clear"); // Clear the console
                     printGrid(grid, height, width, iteration);
                     //usleep(200000); // Sleep for 200 milliseconds
+                    usleep(1000000); // Sleep for 200 milliseconds
                     //usleep(20000); // Sleep for 20 milliseconds
                 }
 
