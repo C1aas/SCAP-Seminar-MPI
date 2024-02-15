@@ -1,0 +1,3 @@
+- memory usage
+- message passing
+- synchronising
