@@ -139,7 +139,8 @@ void printGrid(unsigned char** grid, int height, int width, int iteration) {
     for (int i = 0; i < height; i++) {
         printf("|"); // Left border
         for (int j = 0; j < width; j++) {
-            printf("%c ", grid[i][j] ? 'O' : '.');
+            //printf("%c ", grid[i][j] ? 'O' : '.');
+            printf("%d ", (int)grid[i][j]);
         }
         printf("|\n"); // Right border
     }
