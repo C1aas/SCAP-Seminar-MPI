@@ -12,7 +12,8 @@
 /*
 Optimizations
 - Use a 2 bit to store the next state of the cell
-
+- what to use this for?
+    - execute 100000 random patterns and see which one lives the longest
 */
 /*
 int main(int argc, char** argv) {
@@ -274,7 +275,7 @@ void sendandReceiveUpdatedGridRows(WorkerConfig cfg) {
 void sendGridToMain(WorkerConfig cfg) {
     
     // Send the updated grid to the main process;
-    printf("Rank %d: Sending total of %d rows to main\n", cfg.world_rank, cfg.update_row_count);
+    //printf("Rank %d: Sending total of %d rows to main\n", cfg.world_rank, cfg.update_row_count);
 
     // the update_end_row is inclusive
     for (int i = cfg.update_start_row; i <= cfg.update_end_row; i++) {
@@ -292,7 +293,7 @@ void sendGridToMain(WorkerConfig cfg) {
  * @param world_size The total number of processes
  */
 void receiveGridParts(WorkerConfig* workerConfigs, unsigned char** grid, int height, int width, int world_size) {
-    printf("Main: Receiving total grid from workers\n");
+    //printf("Main: Receiving total grid from workers\n");
     MPI_Request requests[height];
 
     //printf("Main: waiting to receive a total of %d rows\n", height);
@@ -300,7 +301,7 @@ void receiveGridParts(WorkerConfig* workerConfigs, unsigned char** grid, int hei
     for (int worker_idx = 1; worker_idx < world_size; worker_idx++) {
         
         WorkerConfig* cfg = &workerConfigs[worker_idx-1];
-        printf("Main: waiting to receive %d rows from %d\n", cfg->update_row_count, worker_idx);
+        //printf("Main: waiting to receive %d rows from %d\n", cfg->update_row_count, worker_idx);
         for(int i = 0; i < cfg->update_row_count; i++) {
             //MPI_Recv(grid[cfg->row_index_main_grid + i], width, MPI_CHAR, worker_idx, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
             //printf("Main: Received row %d from %d\n", cfg->row_index_main_grid + i, worker_idx);
@@ -310,7 +311,7 @@ void receiveGridParts(WorkerConfig* workerConfigs, unsigned char** grid, int hei
 
     MPI_Waitall(world_size - 1, requests, MPI_STATUSES_IGNORE);
     
-    printf("Main: Received total grid\n");
+    //printf("Main: Received total grid\n");
 }
 
 void distributeAndSendGrid(int world_size, unsigned char** grid, int height, int width, WorkerConfig* workerConfigs){
@@ -361,11 +362,83 @@ void distributeAndSendGrid(int world_size, unsigned char** grid, int height, int
     //printf("main: Sent all Grids\n");
 }
 
+
+bool gridsAreEqual(unsigned char** grid_before, unsigned char** grid_after, int height, int width) {
+    for (int i = 0; i < height; i++) {
+        for (int j = 0; j < width; j++) {
+            if (grid_before[i][j] != grid_after[i][j]) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+void copyGrid(unsigned char** src_grid, unsigned char** target_grid, int height, int width) {
+    for (int i = 0; i < height; i++) {
+        for (int j = 0; j < width; j++) {
+            target_grid[i][j] = src_grid[i][j];
+        }
+    }
+}
+
+void save_grid_as_image(char* name, unsigned char** grid, int height, int width, int iterations) {
+    char file_name_buffer[80];
+    sprintf(file_name_buffer, "grid_lifetime/%s-grid-%d-iter.jpg", name, iterations);
+    write_jpeg_file(file_name_buffer, grid, width, height);
+}
+
+void writeGridToFile(char* name, unsigned char** grid, int height, int width, int iterations) {
+    FILE *filePointer;
+    char file_name_buffer[80];
+    char file_name_buffer_jpg[80];
+    
+    sprintf(file_name_buffer, "grid_lifetime/%s-grid-%d-iter.txt", name, iterations);
+    filePointer = fopen(file_name_buffer, "w");
+
+    for (int i = 0; i < height; i++) {
+        for (int j = 0; j < width; j++) {
+            fprintf(filePointer, "%c", grid[i][j] ? '1' : '0');
+        }
+        fprintf(filePointer, "\n");
+    }
+    fclose(filePointer);
+}
+
+unsigned char** readGridFromFile(char* name, int height, int width, int iterations) {
+    FILE *filePointer;
+    char file_name_buffer[80];
+    char file_name_buffer_jpg[80];
+    
+    sprintf(file_name_buffer, "grid_lifetime/%s-grid-%d-iter.txt", name, iterations);
+    filePointer = fopen(file_name_buffer, "r");
+
+    unsigned char** grid = createGrid(height, width);
+    for (int i = 0; i < height; i++) {
+        char line[width];
+        fgets(line, width + 1, filePointer);
+        for (int j = 0; j < width; j++) {
+            grid[i][j] = line[j] == '1' ? 1 : 0;
+        }
+    }
+    fclose(filePointer);
+    return grid;
+}
+
+//test if any of the grids are the same
+bool simulationStopped(unsigned char** grid1, unsigned char** grid2, unsigned char** grid3, unsigned char** grid4, int height, int width) {
+    bool gridone = gridsAreEqual(grid1, grid2, height, width) || gridsAreEqual(grid1, grid3, height, width) || gridsAreEqual(grid1, grid4, height, width);
+    bool gridtwo = gridsAreEqual(grid2, grid3, height, width) || gridsAreEqual(grid2, grid4, height, width);
+    bool gridthree = gridsAreEqual(grid3, grid4, height, width);
+    return gridone || gridtwo || gridthree;
+}
+
 int main(int argc, char** argv) {
     MPI_Init(&argc, &argv);
 
-    int height = 10000; // Example grid height
-    int width = 10000; // Example grid width
+    int height = 100; // Example grid height
+    int width = 100; // Example grid width
+    int iterations = 5000; // Example number of iterations
 
     int world_rank, world_size;  
 
@@ -376,12 +449,20 @@ int main(int argc, char** argv) {
     //register custom MPI type
     createWorkerConfigMPIType(&workerConfigType);
 
+    // create a new communicator for the workers
+    MPI_Comm worker_comm;
+    int color = (world_rank == 0) ? MPI_UNDEFINED : 1; // Same color for workers, MPI_UNDEFINED for the main process
+    MPI_Comm_split(MPI_COMM_WORLD, color, world_rank, &worker_comm); // All processes call MPI_Comm_split, but only worker processes get a valid new communicator
 
     if (world_rank == 0) {
         long long start = current_time_millis();
+
         unsigned char** grid = createGrid(height, width);
-    
         initializeGridRandom(grid, height, width, 0.3);
+
+        unsigned char** initial_grid = createGrid(height, width);
+        copyGrid(grid, initial_grid, height, width);
+        
         //initializeGridModulo(grid, height, width, 3);
         //initializeGridZero(grid, height, width);
         
@@ -389,14 +470,50 @@ int main(int argc, char** argv) {
         WorkerConfig workerConfigs[world_size - 1];
         distributeAndSendGrid(world_size, grid, height, width, workerConfigs);
 
-        printf("main: Writing initial image to 'mpi_initial_grid.jpg'\n");
-        write_jpeg_file("mpi_initial_grid.jpg", grid, width, height);
+        //printf("main: Writing initial image to 'mpi_initial_grid.jpg'\n");
+        //write_jpeg_file("mpi_initial_grid.jpg", initial_grid, width, height);
 
-        receiveGridParts(workerConfigs, grid, height, width, world_size);
-        printf("main: Received total grid from workers\n");
-        printf("main: Writing image to 'mpi_result_grid.jpg'\n");
-        write_jpeg_file("mpi_result_grid.jpg", grid, width, height);
+        unsigned char** grid_temp1 = createGrid(height, width);
+        unsigned char** grid_temp2 = createGrid(height, width);
+        unsigned char** grid_temp3 = createGrid(height, width);
+        unsigned char** grid_temp4 = createGrid(height, width);
+ 
+        for(int i = 0; i < iterations; i++) {
+             if (i % 10 == 0) {
+                receiveGridParts(workerConfigs, grid_temp1, height, width, world_size);
+            }
+            if (i % 10 == 1) {
+                receiveGridParts(workerConfigs, grid_temp2, height, width, world_size);
+            }
+            if (i % 10 == 2) {
+                receiveGridParts(workerConfigs, grid_temp3, height, width, world_size);
+            }
+            if (i % 10 == 3) {
+                receiveGridParts(workerConfigs, grid_temp4, height, width, world_size);
+                if(simulationStopped(grid_temp1, grid_temp2, grid_temp3, grid_temp4, height, width)) {
+                    printf("Grid is the same as before after %d iterations\n", i );
+                    if (i > 2000) {
 
+                        printf("*** FOUND A GOOD PATTERN ***\n");
+                        //printf("Found a pattern that repeats after %d iterations\n", i);
+                        writeGridToFile("initial_grid", initial_grid, height, width, i);
+                        save_grid_as_image("final_grid", grid_temp3, height, width, i);
+                    }
+                    
+
+                    //write_jpeg_file("mpi_result_grid.jpg", grid_temp3, width, height);
+                    MPI_Abort(MPI_COMM_WORLD, 300);
+                    break;
+                    
+                }
+            }
+        }
+
+        //receiveGridParts(workerConfigs, grid, height, width, world_size);
+        //printf("main: Received total grid from workers\n");
+        //printf("main: Writing image to 'mpi_result_grid.jpg'\n");
+        //write_jpeg_file("mpi_result_grid.jpg", grid, width, height);
+        /*
         printf("main: done\n");
         long long end = current_time_millis();
         long long total = end - start;
@@ -405,14 +522,23 @@ int main(int argc, char** argv) {
         printf("Time taken: %lld milliseconds\n", total);
         printf("Time per iteration: %lld milliseconds\n", total / 50);
         printf("----------------------------------------\n");
+        */
+        freeGrid(grid, height);
+        freeGrid(initial_grid, height);
+        freeGrid(grid_temp1, height);
+        freeGrid(grid_temp2, height);
+        freeGrid(grid_temp3, height);
+        
     } else {
         //printf("Rank %d: Receiving config\n", world_rank);
         WorkerConfig cfg = receiveWorkerConfig();
         //printf("Rank %d: Received config\n", world_rank);
         receiveInitialGrid(&cfg);
-        printf("Rank %d: Received config and initial grid. Starting to calculate...\n", world_rank);
-        printf("Rank %d: calculating 200 iterations\n", world_rank);
-        for(int i = 0; i < 200*5; i++) {
+        //printf("Rank %d: Received config and initial grid. Starting to calculate...\n", world_rank);
+
+        MPI_Barrier(worker_comm); // Barrier operation for workers only, to make them start at the same time
+
+        for(int i = 0; i < iterations; i++) {
             updateGridWithLimit(cfg);
             
             //printf("Rank %d: Updated grid\n", world_rank);
@@ -420,10 +546,29 @@ int main(int argc, char** argv) {
             sendandReceiveUpdatedGridRows(cfg);
             //printf("Rank %d: Sent and received updated grid\n", world_rank);
             //printGrid(cfg.local_grid, cfg.num_rows, cfg.grid_width, 0);
+            if (i % 10 == 0) {
+                sendGridToMain(cfg);
+            }
+            if (i % 10 == 1) {
+                sendGridToMain(cfg);
+            }
+            if (i % 10 == 2) {
+                sendGridToMain(cfg);
+            }
+            if (i % 10 == 3) {
+                sendGridToMain(cfg);
+            }
+            // if(i % 100 == 0) {
+            //     printf("Rank %d: Iteration %d\n", world_rank, i);
+            // }
         }
-        printf("Rank %d: calculated 200 iterations\n", world_rank);
-        sendGridToMain(cfg);
-        printf("Rank %d: done\n", world_rank);
+        freeGrid(cfg.local_grid, cfg.num_rows);
+
+        //printf("Rank %d: calculated %d iterations\n", world_rank, iterations);
+        //sendGridToMain(cfg);
+        //printf("Rank %d: done\n", world_rank);
+
+        MPI_Comm_free(&worker_comm); // Free the communicator for worker processes
     }
 
     // free custom MPI type
