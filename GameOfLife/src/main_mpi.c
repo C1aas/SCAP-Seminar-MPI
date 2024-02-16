@@ -20,6 +20,15 @@ int main(int argc, char** argv) {
 }
 */
 
+int min(int a, int b) {
+    return a < b ? a : b;
+}
+
+int max(int a, int b) {
+    return a > b ? a : b;
+}
+
+
 
 /**
  * Data of the worker process
@@ -35,16 +44,87 @@ int main(int argc, char** argv) {
 struct WorkerConfig {
     int world_size;
     int world_rank;
-    int start_row; // start row in the global grid
-    int end_row; // end row in the global grid
+    
+    int row_index_main_grid; // the row index in the main grid of the update_start_row
     unsigned char** local_grid;
-    int grid_height; // total height of the grid
-    int grid_width; // total width of the grid
-    int update_start_row; // The first row to update
-    int update_end_row; // The last row to update
+    int num_rows; //dynamic height of the grid, more than the update update_row_count
+    int grid_width; // total width of the grid, stays the same for all workers
+
+    int update_start_row; // most of the time its 1 but if its the first rank it is 0
+    int update_end_row; // most of the time its height - 1 but if its the last rank it is height
+    int update_row_count;
 };
 typedef struct WorkerConfig WorkerConfig;
 
+//create custom global MPI type for the worker config
+MPI_Datatype workerConfigType;
+
+void createWorkerConfigMPIType(MPI_Datatype *newtype) {
+    int blocklengths[8] = {1, 1, 1, 1, 1, 1, 1, 1};
+    MPI_Datatype types[8] = {MPI_INT, MPI_INT, MPI_INT, MPI_INT, MPI_INT, MPI_INT, MPI_INT, MPI_INT};
+    MPI_Aint displacements[8];
+    
+    WorkerConfig temp;
+    MPI_Aint base_address;
+    MPI_Get_address(&temp, &base_address);
+    MPI_Get_address(&temp.world_size, &displacements[0]);
+    MPI_Get_address(&temp.world_rank, &displacements[1]);
+    MPI_Get_address(&temp.row_index_main_grid, &displacements[2]);
+    // Ignore local_grid
+    MPI_Get_address(&temp.num_rows, &displacements[3]);
+    MPI_Get_address(&temp.grid_width, &displacements[4]);
+    MPI_Get_address(&temp.update_start_row, &displacements[5]);
+    MPI_Get_address(&temp.update_end_row, &displacements[6]);
+    MPI_Get_address(&temp.update_row_count, &displacements[7]);
+
+    // Korrektur der Displacements
+    for (int i = 0; i < 8; i++) {
+        displacements[i] -= base_address;
+    }
+
+    MPI_Type_create_struct(8, blocklengths, displacements, types, newtype);
+    MPI_Type_commit(newtype);
+}
+
+/**
+ * Initializes the worker process Config
+ * sets the world_rank, world_size, grid_width and the update_start_row and update_end_row
+ * 
+ * @param world_size The total number of processes
+ * @param world_rank The rank of the worker
+ * @param row_index_main_grid The row index in the main grid that will be send back to the main process
+ * @param num_rows The number of rows to update
+ * @param width The width of the grid
+ * @return The initialized worker process Config
+ */
+WorkerConfig initWorkerConfig(int world_size, int world_rank, int row_index_main_grid, int num_rows, int grid_width) {
+    assert(grid_width > 0);
+    assert(num_rows > 0);
+    WorkerConfig cfg = {
+        .world_size = world_size,
+        .world_rank = world_rank,
+        .row_index_main_grid = row_index_main_grid,
+        .num_rows = num_rows,
+        .grid_width = grid_width,
+        .update_start_row = -1,
+        .update_end_row = -1,
+        .update_row_count = -1
+    };
+    cfg.update_start_row = world_rank == 1 ? 0 : 1; // worldrank 1 means first worker
+
+    // minus 1 because its 0 indexed and minus 1 because the last row is not updated if its not the last rank
+    cfg.update_end_row = world_rank == world_size - 1 ?  num_rows - 1 : num_rows - 1 - 1; 
+    cfg.update_row_count = cfg.update_end_row - cfg.update_start_row + 1;
+    return cfg;
+}
+
+WorkerConfig receiveWorkerConfig() {
+    WorkerConfig cfg;
+    MPI_Recv(&cfg, 1, workerConfigType, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    //print the config for debugging
+    //printf("Rank %d: Received config: world_size: %d, world_rank: %d, row_index_main_grid: %d, num_rows: %d, grid_width: %d, update_start_row: %d, update_end_row: %d, update_row_count: %d\n", cfg.world_rank, cfg.world_size, cfg.world_rank, cfg.row_index_main_grid, cfg.num_rows, cfg.grid_width, cfg.update_start_row, cfg.update_end_row, cfg.update_row_count);
+    return cfg;
+}
 
 
 /**
@@ -110,48 +190,14 @@ void updateGridWithLimit(WorkerConfig cfg) {
 
 }
 
-int min(int a, int b) {
-    return a < b ? a : b;
-}
-
-int max(int a, int b) {
-    return a > b ? a : b;
-}
-
-
 
 /**
- * Initializes the worker process Config
- * sets the world_rank, world_size, grid_width and the update_start_row and update_end_row
+ * Receives the initial grid from the main process
  * 
- * @param world_rank The rank of the worker
- * @param world_size The total number of processes
- * @param grid_width The width of the grid
- * @return The configuration for the worker
+ * @param cfg The worker process Config
  */
-WorkerConfig initWorkerConfig(int world_rank, int world_size, int grid_width) {
-    assert(grid_width > 0);
-
-    WorkerConfig cfg = {
-        .world_rank = world_rank,
-        .world_size = world_size,
-        .local_grid = NULL,
-        .grid_height = -1,
-        .grid_width = grid_width,
-        .update_start_row = -1,
-        .update_end_row = -1,
-        .start_row = -1,
-        .end_row = -1
-    };
-
-    // set the start and end row to update
-    cfg.update_start_row = cfg.world_rank == 0 ? 0 : 1; // only if first rank, update first row, otherwise update from second row on
-
-    //printf("Rank %d: initialized\n", cfg.world_rank);
-    return cfg;
-}
-
 void receiveInitialGrid(WorkerConfig* cfg) {
+    /*
     // Receive the grid height
     int numRows;
     MPI_Recv(&numRows, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
@@ -169,9 +215,18 @@ void receiveInitialGrid(WorkerConfig* cfg) {
     }
 
     printf("Rank %d: received grid\n", cfg->world_rank);
+    */
+
+    printf("Rank %d: receiving %d rows\n", cfg->world_rank, cfg->num_rows);
+    cfg->local_grid = createGrid(cfg->num_rows, cfg->grid_width);
+    for (int i = 0; i < cfg->num_rows; i++) {
+        //printf("Rank %d: Receiving row %d\n", world_rank, i);
+        MPI_Recv(cfg->local_grid[i], cfg->grid_width, MPI_CHAR, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    }
+
 }
 
-void sendandReceiveUpdatedGrid(WorkerConfig cfg) {
+void sendAndReceiveUpdatedGrid(WorkerConfig cfg) {
     // Receive the updated grid
     
     // Send the updated grid to the neighbor processes
@@ -185,7 +240,7 @@ void sendandReceiveUpdatedGrid(WorkerConfig cfg) {
 
     if(cfg.world_rank < cfg.world_size - 1) {
         //send borders to the upper neighbor
-        MPI_Isend(cfg.local_grid[cfg.grid_height - 1], cfg.grid_width, MPI_CHAR, cfg.world_rank + 1, 0, MPI_COMM_WORLD, &send_request[send_count++]);
+        MPI_Isend(cfg.local_grid[cfg.num_rows - 1], cfg.grid_width, MPI_CHAR, cfg.world_rank + 1, 0, MPI_COMM_WORLD, &send_request[send_count++]);
     }
 
     
@@ -197,7 +252,7 @@ void sendandReceiveUpdatedGrid(WorkerConfig cfg) {
     
     if(cfg.world_rank < cfg.world_size - 1) {
         //receive borders from the upper neighbor
-        MPI_Recv(cfg.local_grid[cfg.grid_height - 1], cfg.grid_width, MPI_CHAR, cfg.world_rank + 1, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        MPI_Recv(cfg.local_grid[cfg.num_rows - 1], cfg.grid_width, MPI_CHAR, cfg.world_rank + 1, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
     }
 
     // Wait for non-blocking sends to complete
@@ -210,10 +265,9 @@ void sendandReceiveUpdatedGrid(WorkerConfig cfg) {
 
 void sendGridToMain(WorkerConfig cfg) {
     
-    // Send the updated grid to the main process
-    int totalRows = cfg.update_end_row - cfg.update_start_row + 1;
-    printf("Rank %d: Sending total of %d rows to main\n", cfg.world_rank, totalRows);
-    for (int i = 0; i < totalRows; i++) {
+    // Send the updated grid to the main process;
+    printf("Rank %d: Sending total of %d rows to main\n", cfg.world_rank, cfg.update_row_count);
+    for (int i = cfg.update_start_row; i < cfg.update_end_row; i++) {
         MPI_Send(cfg.local_grid[i], cfg.grid_width, MPI_CHAR, 0, 0, MPI_COMM_WORLD);
     }
 }
@@ -231,18 +285,13 @@ void receiveGridParts(WorkerConfig* workerConfigs, unsigned char** grid, int hei
     printf("Main: Receiving total grid from workers\n");
     MPI_Request requests[world_size-1];
 
-    //TODO not only receive one row but all rows from each worker
+    
     for (int worker_idx = 1; worker_idx < world_size; worker_idx++) {
         
         WorkerConfig* cfg = &workerConfigs[worker_idx-1];
-        int total_rows = cfg->end_row - cfg->start_row + 1;
-        printf("Main: waiting to receiv %d rows from %d\n", total_rows, worker_idx,);
-        for(int i = 0; i < total_rows; i++) {
-
-            int target_row = cfg->start_row + i;
-            assert(target_row <= cfg->end_row);
-
-            MPI_Irecv(grid[target_row], width, MPI_CHAR, worker_idx, 0, MPI_COMM_WORLD, &requests[worker_idx-1]);
+        printf("Main: waiting to receive %d rows from %d\n", cfg->update_row_count, worker_idx);
+        for(int i = 0; i < cfg->update_row_count; i++) {
+            MPI_Irecv(grid[cfg->row_index_main_grid + i], width, MPI_CHAR, worker_idx, 0, MPI_COMM_WORLD, &requests[worker_idx-1]);
         }
     }
 
@@ -271,40 +320,45 @@ void distributeAndSendGrid(int world_size, unsigned char** grid, int height, int
     int remainder = height % worker_amount;
     // Distribute the grid to all processes, including itself
     for (int rank = 1; rank < world_size; rank++) { // iterate over all other processes
-        workerConfigs[rank - 1] = initWorkerConfig(rank, world_size, width);  // initialize the worker config to be able to receive the grid
+        
         int idx = rank - 1;
         int startRow = idx * rowsPerProcess + (idx < remainder ? idx : remainder);
         int endRow = startRow + rowsPerProcess - 1 + (idx < remainder ? 1 : 0);
-        printf("rank %d: startRow %d, endRow %d\n", rank, startRow, endRow);
+        //printf("rank %d: startRow %d, endRow %d\n", rank, startRow, endRow);
+
+        int row_index_main_grid = startRow;
 
         //send one line more to each process, therefor they are able to update the border
         startRow = max(startRow - 1, 0);
         endRow = min(endRow + 1, height - 1);
         
-        int numRows = endRow - startRow + 1;
+        int num_rows = endRow - startRow + 1;
+        WorkerConfig cfg = initWorkerConfig(world_size, rank, row_index_main_grid, num_rows, width);
+        workerConfigs[idx] = cfg;
+        // send the config to the worker
+        printf("main -> %d: Sending config\n", rank);
+        MPI_Send(&cfg, 1, workerConfigType, cfg.world_rank, 0, MPI_COMM_WORLD);
+        printf("main -> %d: Sent config\n", cfg.world_rank);
 
-        // save it to be able to receive and stitch the grid later
-        workerConfigs[rank - 1].start_row = startRow;
-        workerConfigs[rank - 1].end_row = endRow;
-        workerConfigs[rank - 1].grid_height = numRows;
-
-        printf("main -> %d: Sending %d rows\n", rank, numRows);
-        MPI_Send(&numRows, 1, MPI_INT, rank, 0, MPI_COMM_WORLD);
-        for(int i = 0; i < numRows; i++) {
+        printf("main -> %d: Sending %d rows\n", cfg.world_rank, cfg.num_rows);
+        // Send the initial grid in chunks
+        for(int i = 0; i < cfg.num_rows; i++) {
             // Send the initial grid in chunks
             //printf("Rank %d -> %d: Sending row %d\n", 0, rank, startRow + i);
-            MPI_Send(grid[startRow + i], width, MPI_CHAR, rank, 0, MPI_COMM_WORLD);
+            MPI_Send(grid[startRow + i], width, MPI_CHAR, cfg.world_rank, 0, MPI_COMM_WORLD);
         }
-        
-        //MPI_Send(grid + startRow * width, numRows * width, MPI_INT, rank, 0, MPI_COMM_WORLD);
     }
+
+    printf("main: Sent all Grids\n");
 }
+
+
 
 int main(int argc, char** argv) {
     MPI_Init(&argc, &argv);
 
-    int height = 20; // Example grid height
-    int width = 20; // Example grid width
+    int height = 10; // Example grid height
+    int width = 10; // Example grid width
 
     int world_rank, world_size;  
 
@@ -312,6 +366,8 @@ int main(int argc, char** argv) {
     MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
     MPI_Comm_size(MPI_COMM_WORLD, &world_size);
 
+    //register custom MPI type
+    createWorkerConfigMPIType(&workerConfigType);
 
     if (world_rank == 0) {
         
@@ -329,21 +385,26 @@ int main(int argc, char** argv) {
         printGrid(grid, height, width, 0);
 
     } else {
-        
-        WorkerConfig cfg = initWorkerConfig(world_rank, world_size, width);
+        printf("Rank %d: Receiving config\n", world_rank);
+        WorkerConfig cfg = receiveWorkerConfig();
+        printf("Rank %d: Received config\n", world_rank);
         receiveInitialGrid(&cfg);
+
         
         //printf("Rank %d: Received grid\n", world_rank);
         //printGrid(local_grid, numRows, width, 0);
         updateGridWithLimit(cfg);
         printf("Rank %d: Updated grid\n", world_rank);
-        printGrid(cfg.local_grid, cfg.grid_height, cfg.grid_width, 0);
+        printGrid(cfg.local_grid, cfg.num_rows, cfg.grid_width, 0);
         
         //sendandReceiveUpdatedGrid(cfg);
 
         sendGridToMain(cfg);
 
     }
+
+    // free custom MPI type
+    MPI_Type_free(&workerConfigType);
 
     MPI_Finalize();
     return 0;
