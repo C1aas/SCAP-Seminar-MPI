@@ -52,6 +52,9 @@ void freeGrid(unsigned char** grid, int height);
 */
 void initializeGridRandom(unsigned char** grid, int height, int width, float density);
 
+void initializeGridZero(unsigned char** grid, int height, int width);
+
+
 void initializeGridRandom1D(unsigned char* grid, int height, int width, float density);
 
 void initializeGridModulo(unsigned char** grid, int height, int width, int modulo);
@@ -76,6 +79,8 @@ void run(GameConfig cfg);
  * @param cfg the configuration of the game
 */
 void gameLoop(GameConfig cfg);
+
+long long current_time_millis();
 
 /**
  * Run the game of life simulation with the given configuration and measure the time

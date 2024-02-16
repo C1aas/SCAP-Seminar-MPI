@@ -1,5 +1,4 @@
 #include <stdio.h>
-#include <mpi.h>
 
 #include "game_of_life.h"
 #include "arg_parser.h"

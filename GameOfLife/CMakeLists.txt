@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 2.8)
+cmake_minimum_required(VERSION 3.1)
 project(GameOfLife)
 
 # Set the include directories, this is where the header files are located
@@ -11,13 +11,13 @@ set(CMAKE_C_STANDARD 17)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
 # Set the C compiler to scorep-mpicc
-set(CMAKE_C_COMPILER scorep-gcc)
+set(CMAKE_C_COMPILER mpicc)
 
 # Optimization flag
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O2 -ljpeg")
 
 # Add source files
-set(SOURCE_FILES src/main.c src/game_of_life.c src/arg_parser.c src/image_creation.c )
+set(SOURCE_FILES src/main_mpi.c src/game_of_life.c src/arg_parser.c src/image_creation.c )
 
 # Set the output directories
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)

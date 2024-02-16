@@ -32,6 +32,15 @@ void freeGrid(unsigned char** grid, int height) {
     free(grid);
 }
 
+void initializeGridZero(unsigned char** grid, int height, int width) {
+    for (int i = 0; i < height; i++) {
+        for (int j = 0; j < width; j++) {
+            grid[i][j] = 0;
+        }
+    }
+
+}
+
 void initializeGridRandom(unsigned char** grid, int height, int width, float density) {
     srand(time(NULL)); // Seed the random number generator with current time
     

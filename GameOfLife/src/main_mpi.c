@@ -1,9 +1,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <mpi.h>
+#include <time.h>
 
 #include "game_of_life.h"
 #include "arg_parser.h"
+#include "image_creation.h"
 
 #include <assert.h>
 
@@ -143,10 +145,11 @@ void updateGridWithLimit(WorkerConfig cfg) {
     assert(cfg.update_end_row > 0);
 
     // First pass: Determine the next state for each cell
-    for (int i = cfg.update_start_row; i < cfg.update_end_row; i++) {
+    // end row is inclusive
+    for (int i = cfg.update_start_row; i <= cfg.update_end_row; i++) {
         for (int j = 0; j < cfg.grid_width; j++) {
-            cfg.local_grid[i][j] = cfg.world_rank;
-            /*
+            
+            
             int liveNeighbors = 0;
             // Check all eight neighbors
             for (int y = -1; y <= 1; y++) {
@@ -154,40 +157,37 @@ void updateGridWithLimit(WorkerConfig cfg) {
                     if (y == 0 && x == 0) continue; // Skip the cell itself
                     int ni = i + y;
                     int nj = j + x;
-                    if (ni >= 0 && ni < height && nj >= 0 && nj < width) {
+                    if (ni >= 0 && ni < cfg.num_rows && nj >= 0 && nj < cfg.grid_width) {
                         // cells are either 
                         // 0b0 or 0b1 with bitshift we extract the one and add it to live Neighbors
-                        liveNeighbors += grid[ni][nj] & 1;
+                        liveNeighbors += cfg.local_grid[ni][nj] & 1;
                     }
                 }
             }
 
             // Apply the Game of Life rules using the additional bits for the next state
-            if (grid[i][j] & 1) { // Currently alive, correctly check using & 1
+            if (cfg.local_grid[i][j] & 1) { // Currently alive, correctly check using & 1
                 if (liveNeighbors == 2 || liveNeighbors == 3) { // otherwise over or under population death
                     // a cell is alive 'x1' and next round it needs to live set 2nd bit to 1 '11'
-                    grid[i][j] |= 2; // Set the second bit to stay alive in the next state
+                    cfg.local_grid[i][j] |= 2; // Set the second bit to stay alive in the next state
                 }
             } else { // Currently dead
                 if (liveNeighbors == 3) {
                     // a cell is dead 'x0' and next round it needs to be born set 2nd bit to 1 -> '10'
-                    grid[i][j] |= 2; // Dead cell becoming alive, set the second bit
+                    cfg.local_grid[i][j] |= 2; // Dead cell becoming alive, set the second bit
                 }
-            }*/
+            }
         }
     }
 
     
-    /*
+    
     // Second pass: Update the grid to the next state
-    for (int i = cfg.update_start_row; i < cfg.update_end_row; i++) {
-        for (int j = 0; j < width; j++) {
-            grid[i][j] >>= 1; // Shift to the right to get the next state
+    for (int i = cfg.update_start_row; i <= cfg.update_end_row; i++) {
+        for (int j = 0; j < cfg.grid_width; j++) {
+            cfg.local_grid[i][j] >>= 1; // Shift to the right to get the next state
         }
     }
-    */
-    
-
 }
 
 
@@ -197,27 +197,7 @@ void updateGridWithLimit(WorkerConfig cfg) {
  * @param cfg The worker process Config
  */
 void receiveInitialGrid(WorkerConfig* cfg) {
-    /*
-    // Receive the grid height
-    int numRows;
-    MPI_Recv(&numRows, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-    cfg->grid_height = numRows;
-
-    cfg->update_end_row = cfg->world_rank == cfg->world_size - 1 ?  cfg->grid_height : cfg->grid_height - 1; // only if last rank, update last row, otherwise update until second last row
-
-    assert(cfg->grid_height > 0);
-
-    printf("Rank %d: receiving %d rows\n", cfg->world_rank, cfg->grid_height);
-    cfg->local_grid = createGrid(cfg->grid_height, cfg->grid_width);
-    for (int i = 0; i < numRows; i++) {
-        //printf("Rank %d: Receiving row %d\n", world_rank, i);
-        MPI_Recv(cfg->local_grid[i], cfg->grid_width, MPI_CHAR, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-    }
-
-    printf("Rank %d: received grid\n", cfg->world_rank);
-    */
-
-    printf("Rank %d: receiving %d rows\n", cfg->world_rank, cfg->num_rows);
+    // printf("Rank %d: receiving %d rows\n", cfg->world_rank, cfg->num_rows);
     cfg->local_grid = createGrid(cfg->num_rows, cfg->grid_width);
     for (int i = 0; i < cfg->num_rows; i++) {
         //printf("Rank %d: Receiving row %d\n", world_rank, i);
@@ -226,38 +206,66 @@ void receiveInitialGrid(WorkerConfig* cfg) {
 
 }
 
-void sendAndReceiveUpdatedGrid(WorkerConfig cfg) {
+void printRow(int rank, unsigned char* row, int width) {
+    printf("Rank %d: ", rank);
+    for (int i = 0; i < width; i++) {
+        printf("%d", row[i]);
+    }
+    printf("\n");
+}
+
+/**
+ * Sends the updated grid to the neighbor processes and receives the updated grid from the neighbor processes
+ * 
+ * @param cfg The worker process Config
+ */
+void sendandReceiveUpdatedGridRows(WorkerConfig cfg) {
     // Receive the updated grid
     
     // Send the updated grid to the neighbor processes
-    MPI_Request send_request[2]; // For non-blocking sends
-    int send_count = 0;
+    MPI_Request requests[4]; // For non-blocking requests
+    int request_count = 0;
 
-    if(cfg.world_rank > 0) {
-        //send borders to the lower neighbor
-        MPI_Isend(cfg.local_grid[0], cfg.grid_width, MPI_CHAR, cfg.world_rank - 1, 0, MPI_COMM_WORLD, &send_request[send_count++]);
+    // lower upper in terms of index 0 is the lowest index and upper is a higher index
+
+    int worker_idx = cfg.world_rank - 1;
+    int worker_count = cfg.world_size - 1;
+    if(worker_idx > 0) {
+        //send border to the lower neighbor
+        //printf("Rank %d: trying to send lower border to %d\n", cfg.world_rank, cfg.world_rank - 1);
+        //printRow(cfg.world_rank, cfg.local_grid[cfg.update_start_row], cfg.grid_width);
+
+        MPI_Isend(cfg.local_grid[cfg.update_start_row], cfg.grid_width, MPI_CHAR, cfg.world_rank - 1, 0, MPI_COMM_WORLD, &requests[request_count++]);
+        //printf("Rank %d: Sent lower border to %d\n", cfg.world_rank, cfg.world_rank - 1);
+    }
+    //printf("Rank %d: worker_idx %d, worldsize: %d\n", cfg.world_rank, worker_idx, cfg.world_size);
+    if(worker_idx < worker_count - 1) {
+        //send border to the upper neighbor
+        //printf("Rank %d: trying to send upper border to %d\n", cfg.world_rank, cfg.world_rank + 1);
+        //printRow(cfg.world_rank, cfg.local_grid[cfg.update_end_row], cfg.grid_width);
+
+        MPI_Isend(cfg.local_grid[cfg.update_end_row], cfg.grid_width, MPI_CHAR, cfg.world_rank + 1, 0, MPI_COMM_WORLD, &requests[request_count++]);
+        //printf("Rank %d: Sent upper border to %d\n", cfg.world_rank, cfg.world_rank + 1);   
     }
 
-    if(cfg.world_rank < cfg.world_size - 1) {
-        //send borders to the upper neighbor
-        MPI_Isend(cfg.local_grid[cfg.num_rows - 1], cfg.grid_width, MPI_CHAR, cfg.world_rank + 1, 0, MPI_COMM_WORLD, &send_request[send_count++]);
-    }
-
-    
-    if(cfg.world_rank > 0) {
+    //printf("Rank %d: receiving\n", cfg.world_rank);
+    if(worker_idx > 0) {
         //receive borders from the lower neighbor
-        MPI_Recv(cfg.local_grid[0], cfg.grid_width, MPI_CHAR, cfg.world_rank - 1, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        //printf("Rank %d: trying to receive lower border from %d\n", cfg.world_rank, cfg.world_rank - 1);
+        MPI_Irecv(cfg.local_grid[0], cfg.grid_width, MPI_CHAR, cfg.world_rank - 1, 0, MPI_COMM_WORLD, &requests[request_count++]);
     }
 
     
-    if(cfg.world_rank < cfg.world_size - 1) {
+    if(worker_idx < worker_count - 1) {
         //receive borders from the upper neighbor
-        MPI_Recv(cfg.local_grid[cfg.num_rows - 1], cfg.grid_width, MPI_CHAR, cfg.world_rank + 1, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        //printf("Rank %d: trying to receive upper border from %d\n", cfg.world_rank, cfg.world_rank + 1);
+        MPI_Irecv(cfg.local_grid[cfg.num_rows - 1], cfg.grid_width, MPI_CHAR, cfg.world_rank + 1, 0, MPI_COMM_WORLD, &requests[request_count++]);
     }
 
+    //printf("Rank %d waiting for %d non-blocking sends to complete\n", cfg.world_rank, request_count);
     // Wait for non-blocking sends to complete
-    if (send_count > 0) {
-        MPI_Waitall(send_count, send_request, MPI_STATUSES_IGNORE);
+    if (request_count > 0) {
+        MPI_Waitall(request_count, requests, MPI_STATUSES_IGNORE);
     }
 
 
@@ -267,7 +275,9 @@ void sendGridToMain(WorkerConfig cfg) {
     
     // Send the updated grid to the main process;
     printf("Rank %d: Sending total of %d rows to main\n", cfg.world_rank, cfg.update_row_count);
-    for (int i = cfg.update_start_row; i < cfg.update_end_row; i++) {
+
+    // the update_end_row is inclusive
+    for (int i = cfg.update_start_row; i <= cfg.update_end_row; i++) {
         MPI_Send(cfg.local_grid[i], cfg.grid_width, MPI_CHAR, 0, 0, MPI_COMM_WORLD);
     }
 }
@@ -283,14 +293,17 @@ void sendGridToMain(WorkerConfig cfg) {
  */
 void receiveGridParts(WorkerConfig* workerConfigs, unsigned char** grid, int height, int width, int world_size) {
     printf("Main: Receiving total grid from workers\n");
-    MPI_Request requests[world_size-1];
+    MPI_Request requests[height];
 
+    //printf("Main: waiting to receive a total of %d rows\n", height);
     
     for (int worker_idx = 1; worker_idx < world_size; worker_idx++) {
         
         WorkerConfig* cfg = &workerConfigs[worker_idx-1];
         printf("Main: waiting to receive %d rows from %d\n", cfg->update_row_count, worker_idx);
         for(int i = 0; i < cfg->update_row_count; i++) {
+            //MPI_Recv(grid[cfg->row_index_main_grid + i], width, MPI_CHAR, worker_idx, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            //printf("Main: Received row %d from %d\n", cfg->row_index_main_grid + i, worker_idx);
             MPI_Irecv(grid[cfg->row_index_main_grid + i], width, MPI_CHAR, worker_idx, 0, MPI_COMM_WORLD, &requests[worker_idx-1]);
         }
     }
@@ -298,11 +311,7 @@ void receiveGridParts(WorkerConfig* workerConfigs, unsigned char** grid, int hei
     MPI_Waitall(world_size - 1, requests, MPI_STATUSES_IGNORE);
     
     printf("Main: Received total grid\n");
-    printGrid(grid, height, width, 0);
 }
-//TODO the end and start row dont match the actual rows that are sent
-//fix the send and receive
-
 
 void distributeAndSendGrid(int world_size, unsigned char** grid, int height, int width, WorkerConfig* workerConfigs){
     /*
@@ -336,11 +345,11 @@ void distributeAndSendGrid(int world_size, unsigned char** grid, int height, int
         WorkerConfig cfg = initWorkerConfig(world_size, rank, row_index_main_grid, num_rows, width);
         workerConfigs[idx] = cfg;
         // send the config to the worker
-        printf("main -> %d: Sending config\n", rank);
+        //printf("main -> %d: Sending config\n", rank);
         MPI_Send(&cfg, 1, workerConfigType, cfg.world_rank, 0, MPI_COMM_WORLD);
-        printf("main -> %d: Sent config\n", cfg.world_rank);
+        //printf("main -> %d: Sent config\n", cfg.world_rank);
 
-        printf("main -> %d: Sending %d rows\n", cfg.world_rank, cfg.num_rows);
+        //printf("main -> %d: Sending %d rows\n", cfg.world_rank, cfg.num_rows);
         // Send the initial grid in chunks
         for(int i = 0; i < cfg.num_rows; i++) {
             // Send the initial grid in chunks
@@ -349,16 +358,14 @@ void distributeAndSendGrid(int world_size, unsigned char** grid, int height, int
         }
     }
 
-    printf("main: Sent all Grids\n");
+    //printf("main: Sent all Grids\n");
 }
-
-
 
 int main(int argc, char** argv) {
     MPI_Init(&argc, &argv);
 
-    int height = 10; // Example grid height
-    int width = 10; // Example grid width
+    int height = 10000; // Example grid height
+    int width = 10000; // Example grid width
 
     int world_rank, world_size;  
 
@@ -369,44 +376,64 @@ int main(int argc, char** argv) {
     //register custom MPI type
     createWorkerConfigMPIType(&workerConfigType);
 
+
     if (world_rank == 0) {
-        
+        long long start = current_time_millis();
         unsigned char** grid = createGrid(height, width);
     
         initializeGridRandom(grid, height, width, 0.3);
-        printf("Total grid\n");
-        printGrid(grid, height, width, 0);
+        //initializeGridModulo(grid, height, width, 3);
+        //initializeGridZero(grid, height, width);
+        
 
         WorkerConfig workerConfigs[world_size - 1];
         distributeAndSendGrid(world_size, grid, height, width, workerConfigs);
 
+        printf("main: Writing initial image to 'mpi_initial_grid.jpg'\n");
+        write_jpeg_file("mpi_initial_grid.jpg", grid, width, height);
+
         receiveGridParts(workerConfigs, grid, height, width, world_size);
-        printf("Total grid\n");
-        printGrid(grid, height, width, 0);
+        printf("main: Received total grid from workers\n");
+        printf("main: Writing image to 'mpi_result_grid.jpg'\n");
+        write_jpeg_file("mpi_result_grid.jpg", grid, width, height);
 
+        printf("main: done\n");
+        long long end = current_time_millis();
+        long long total = end - start;
+
+        printf("\n----------------------------------------\n");
+        printf("Time taken: %lld milliseconds\n", total);
+        printf("Time per iteration: %lld milliseconds\n", total / 50);
+        printf("----------------------------------------\n");
     } else {
-        printf("Rank %d: Receiving config\n", world_rank);
+        //printf("Rank %d: Receiving config\n", world_rank);
         WorkerConfig cfg = receiveWorkerConfig();
-        printf("Rank %d: Received config\n", world_rank);
+        //printf("Rank %d: Received config\n", world_rank);
         receiveInitialGrid(&cfg);
-
-        
-        //printf("Rank %d: Received grid\n", world_rank);
-        //printGrid(local_grid, numRows, width, 0);
-        updateGridWithLimit(cfg);
-        printf("Rank %d: Updated grid\n", world_rank);
-        printGrid(cfg.local_grid, cfg.num_rows, cfg.grid_width, 0);
-        
-        //sendandReceiveUpdatedGrid(cfg);
-
+        printf("Rank %d: Received config and initial grid. Starting to calculate...\n", world_rank);
+        printf("Rank %d: calculating 200 iterations\n", world_rank);
+        for(int i = 0; i < 200*5; i++) {
+            updateGridWithLimit(cfg);
+            
+            //printf("Rank %d: Updated grid\n", world_rank);
+            //printGrid(cfg.local_grid, cfg.num_rows, cfg.grid_width, 0);
+            sendandReceiveUpdatedGridRows(cfg);
+            //printf("Rank %d: Sent and received updated grid\n", world_rank);
+            //printGrid(cfg.local_grid, cfg.num_rows, cfg.grid_width, 0);
+        }
+        printf("Rank %d: calculated 200 iterations\n", world_rank);
         sendGridToMain(cfg);
-
+        printf("Rank %d: done\n", world_rank);
     }
 
     // free custom MPI type
     MPI_Type_free(&workerConfigType);
 
     MPI_Finalize();
+
+    
+
+    
     return 0;
 }
 
