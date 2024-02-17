@@ -148,8 +148,8 @@ void printGrid(unsigned char** grid, int height, int width, int iteration) {
     for (int i = 0; i < height; i++) {
         printf("|"); // Left border
         for (int j = 0; j < width; j++) {
-            //printf("%c ", grid[i][j] ? 'O' : '.');
-            printf("%d ", (int)grid[i][j]);
+            printf("%c ", grid[i][j] ? 'O' : '.');
+            //printf("%d ", (int)grid[i][j]);
         }
         printf("|\n"); // Right border
     }
@@ -176,7 +176,8 @@ void gameLoop(GameConfig cfg) {
     int width = cfg.grid_size;
 
     unsigned char** grid = createGrid(height, width);
-    initializeGridModulo(grid, height, width, 3);
+    //initializeGridRandom(grid, height, width, DENSITY);
+    initializeGridModulo(grid, height, width, 2);
     //initializeGridSpaceCraft(grid, height, width, 20, 20);
 
     int iteration = 0;
@@ -189,7 +190,7 @@ void gameLoop(GameConfig cfg) {
                 sprintf(file_name_buffer, "output_images/GoLOutput%d.jpg", iteration);
                 
                 if (cfg.console_output) {
-                    //system("clear"); // Clear the console
+                    system("clear"); // Clear the console
                     printGrid(grid, height, width, iteration);
                     //usleep(200000); // Sleep for 200 milliseconds
                     usleep(1000000); // Sleep for 200 milliseconds

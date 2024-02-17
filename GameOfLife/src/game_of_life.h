@@ -54,7 +54,6 @@ void initializeGridRandom(unsigned char** grid, int height, int width, float den
 
 void initializeGridZero(unsigned char** grid, int height, int width);
 
-
 void initializeGridRandom1D(unsigned char* grid, int height, int width, float density);
 
 void initializeGridModulo(unsigned char** grid, int height, int width, int modulo);
