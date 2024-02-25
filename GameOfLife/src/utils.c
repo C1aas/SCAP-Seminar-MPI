@@ -8,7 +8,6 @@
 void writeGridToFile(char* name, unsigned char** grid, int height, int width, int iterations) {
     FILE *filePointer;
     char file_name_buffer[80];
-    char file_name_buffer_jpg[80];
     
     sprintf(file_name_buffer, "grid_lifetime/%s-grid-%d-iter.txt", name, iterations);
     filePointer = fopen(file_name_buffer, "w");
@@ -25,7 +24,6 @@ void writeGridToFile(char* name, unsigned char** grid, int height, int width, in
 unsigned char** readGridFromFile(char* name, int height, int width, int iterations) {
     FILE *filePointer;
     char file_name_buffer[80];
-    char file_name_buffer_jpg[80];
     
     sprintf(file_name_buffer, "grid_lifetime/%s-grid-%d-iter.txt", name, iterations);
     filePointer = fopen(file_name_buffer, "r");
