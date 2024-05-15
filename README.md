@@ -3,6 +3,7 @@ Respository for the SCAP seminar. Parallel implementation of the "Game of Life" 
 
 ## Game of Life in C
 This project is a C implementation of Conway's Game of Life, with JPEG image output. It includes command-line arguments for convenient execution.
+The Branch "singlecore" contains the singlecore implementation.
 
 ### Features
 - Parallelization utilizing MPI
