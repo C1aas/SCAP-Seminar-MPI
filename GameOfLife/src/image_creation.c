@@ -78,6 +78,9 @@ void wirte1dto2dArray(unsigned char **bitArray, int height, int width, int addre
     bitArray[row][col] = val;
 }
 
+/**
+ * source: https://github.com/LuaDist/libjpeg/blob/master/example.c
+*/
 void write_jpeg_file(char *filename, unsigned char **bitArray, int width, int height) {
     // printf("Converting array to Image...\n");
     struct jpeg_compress_struct cinfo;
@@ -122,10 +125,10 @@ void write_jpeg_file(char *filename, unsigned char **bitArray, int width, int he
 
     int counter = 0;
     while (cinfo.next_scanline < cinfo.image_height) {
-        if(counter % (height / 10) == 0) {
+        //if(counter % (height / 10) == 0) {
             // printf("%d/%d\n", counter, cinfo.image_height);
             fflush(stdout);
-        }
+        //}
         row_pointer[0] = &image[cinfo.next_scanline * row_stride];
         jpeg_write_scanlines(&cinfo, row_pointer, 1);
         counter++;

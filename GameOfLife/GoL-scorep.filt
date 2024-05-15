@@ -1,0 +1,7 @@
+ SCOREP_REGION_NAMES_BEGIN
+     EXCLUDE
+         max
+         min
+         debugPrint
+         current_time_millis
+ SCOREP_REGION_NAMES_END

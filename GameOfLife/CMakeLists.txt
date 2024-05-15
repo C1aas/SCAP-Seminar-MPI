@@ -11,13 +11,15 @@ set(CMAKE_C_STANDARD 17)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
 # Set the C compiler to scorep-mpicc
+#set(CMAKE_C_COMPILER scorep-mpicc)
 set(CMAKE_C_COMPILER mpicc)
 
 # Optimization flag
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O2 -ljpeg")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -g -O2 -ljpeg")
 
 # Add source files
-set(SOURCE_FILES src/main_mpi.c src/game_of_life.c src/arg_parser.c src/image_creation.c )
+#set(SOURCE_FILES src/main.c src/game_of_life.c src/game_of_life_mpi.c src/arg_parser.c src/image_creation.c src/utils.c)
+set(SOURCE_FILES src/main.c src/game_of_life_mpi.c src/arg_parser.c src/image_creation.c src/utils.c src/utils_grid.c)
 
 # Set the output directories
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
